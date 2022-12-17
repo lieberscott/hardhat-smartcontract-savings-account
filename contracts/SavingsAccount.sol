@@ -71,7 +71,7 @@ contract SavingsAccount {
    * @param _withdrawalAmount how much the mainUser wishes to withdraw that day
    */
   function mainUserWithdrawal(uint256 _withdrawalAmount) public onlyMainAccount {
-    if (_withdrawalAmount >= i_mainAccountWithdrawalLimit) {
+    if (_withdrawalAmount > i_mainAccountWithdrawalLimit) {
       revert SavingsAccount__MainWithdrawalTooBig();
     }
 
@@ -100,7 +100,7 @@ contract SavingsAccount {
    * @param _withdrawalAmount how much the backupUser wishes to withdraw that day
    */
   function backupUserWithdrawal(uint256 _withdrawalAmount) public onlyBackupAccount {
-    if (_withdrawalAmount >= i_backupAccountWithdrawalLimit) {
+    if (_withdrawalAmount > i_backupAccountWithdrawalLimit) {
       revert SavingsAccount__BackupWithdrawalTooBig();
     }
 

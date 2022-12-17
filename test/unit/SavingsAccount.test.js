@@ -9,10 +9,12 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 		let savingsAccountFactory, factoryContract;
 
-		let savingsAccountInstance, instanceContract;
+		let savingsAccountInstance;
 
 		const mainUserWithdrawalLimit = ethers.utils.parseEther("1");
 		const backupUserWithdrawalLimit = ethers.utils.parseEther("0.05");
+		const blankAddress = "0x0000000000000000000000000000000000000000";
+		const SECONDS_IN_DAY = 86400;
 
 		beforeEach(async () => {
 			accounts = await ethers.getSigners(); // could also do with getNamedAccounts
@@ -28,14 +30,37 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 		});
 
 		it("Factory should start with an empty mainAccountToContractAddress mapping", async function () {
-			const userData = await factoryContract.getContractFromMainAddress(mainAccount.address);
-			assert.equal(userData.exists, false);
+			const contractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
+			console.log("contractAddress :", contractAddress);
+			assert.equal(contractAddress, blankAddress);
 		});
 
 		it("Factory adds mainAccount to mapping upon savingsAccount deploy", async function() {
-			await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, ethers.utils.parseEther("1"), ethers.utils.parseEther("0.05"));
-			const userData = await factoryContract.getContractFromMainAddress(mainAccount.address);
-			assert.equal(userData.exists, true);
+			await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
+			const contractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
+			expect(contractAddress).to.not.equal(blankAddress);
+		});
+
+		it("Factory rejects new savingsAccount if account already exists", async function() {
+			await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
+			await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+				"SavingsAccountFactory__AccountAlreadyExists"
+			);
+		});
+
+		it("savingsAccount deploy fails if mainWithdrawalLimit is 0", async function() {
+			await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+				"SavingsAccount__MainWithdrawalLimitTooSmall"
+			);
+		});
+
+		it("SavingsAccount contract can receive ETH upon being deployed", async function() {
+
+			await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, { value: mainUserWithdrawalLimit });
+			savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
+			const contractBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
+			
+			assert.equal(contractBalance.toString(), mainUserWithdrawalLimit);
 		});
 
 		it("Factory emits event upon savingsAccount deploy", async () => {
@@ -49,30 +74,169 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				mainUserWithdrawalLimit,
 				backupUserWithdrawalLimit
 			)
-		})
-
-		it("Child adds constructor data to contract", async function() {
-
-			// deploy a child savingsAccount contract
-			await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
-			// get the newly deployed child contract's address
-			const savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
-			// create a connection to the generic SavingsAccount.sol contract
-			const savingsAccount = await ethers.getContractFactory("SavingsAccount");
-			// get the specific instance of the recently deployed child contract
-			instanceContract = savingsAccount.attach(savingsAccountContractAddress);
-			
-			// you can now interact with the child contract
-			const returnedMainAccount = await instanceContract.getMainAccount();
-			const returnedBackupAccount = await instanceContract.getBackupAccount();
-			const returnedMainWithdrawalLimit = await instanceContract.getMainAccountWithdrawalLimit();
-			const returnedBackupWithdrawalLimit = await instanceContract.getBackupAccountWithdrawalLimit();
-			
-			assert.equal(returnedMainAccount, mainAccount.address);
-			assert.equal(returnedBackupAccount, backupAccount.address);
-			assert.equal(returnedMainWithdrawalLimit, mainUserWithdrwalLimit);
-			assert.equal(returnedBackupWithdrawalLimit, backupUserWithdrawalLimit);
 		});
+
+
+		describe("Child tests", () => {
+			
+			let instanceContract, savingsAccountContractAddress;
+
+			beforeEach(async () => {
+				// deploy a child savingsAccount contract
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, { value: ethers.utils.parseEther("3")});
+				// get the newly deployed child contract's address
+				savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
+				// create a connection to the generic SavingsAccount.sol contract
+				const savingsAccount = await ethers.getContractFactory("SavingsAccount");
+				// get the specific instance of the recently deployed child contract
+				instanceContract = savingsAccount.attach(savingsAccountContractAddress);
+			});
+
+			it("Child adds constructor data to contract", async function() {
+			
+				const returnedMainAccount = await instanceContract.getMainAccount();
+				const returnedBackupAccount = await instanceContract.getBackupAccount();
+				const returnedMainWithdrawalLimit = await instanceContract.getMainAccountWithdrawalLimit();
+				const returnedBackupWithdrawalLimit = await instanceContract.getBackupAccountWithdrawalLimit();
+				
+				assert.equal(returnedMainAccount, mainAccount.address);
+				assert.equal(returnedBackupAccount, backupAccount.address);
+				assert.equal(returnedMainWithdrawalLimit.toString(), mainUserWithdrawalLimit);
+				assert.equal(returnedBackupWithdrawalLimit.toString(), backupUserWithdrawalLimit);
+			});
+
+			it("s_mainAccountLastWithdrawalDay is 0 upon deploy", async function() {
+			
+				const s_mainAccountLastWithdrawalDay = await instanceContract.getMainAccountLastWithdrawalDay();
+				
+				assert.equal(s_mainAccountLastWithdrawalDay, 0);
+			});
+
+			it.only("s_mainAccountLastWithdrawalDay updates once mainUser withdraws funds", async function() {
+			
+				// Returns a new instance of the savingsAccount contract connected to mainAccount
+				const instanceContractAsMainUser = instanceContract.connect(mainAccount);
+
+				// Make withdrawal as mainUser
+				const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+
+				const s_mainAccountLastWithdrawalDay = await instanceContract.getMainAccountLastWithdrawalDay();
+
+				expect(s_mainAccountLastWithdrawalDay).is.not.equal(0);
+				
+			});
+
+			it("SavingsAccount contract can receive ETH directly", async function() {
+
+				const startingBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
+
+				const sendAmount = ethers.utils.parseEther("1");
+
+				const transactionHash = await deployer.sendTransaction({
+					to: savingsAccountContractAddress,
+					value: sendAmount
+				});
+			
+				const endingBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
+				
+				assert.equal(endingBalance.toString(), sendAmount + startingBalance);
+			});
+
+			it("mainUser can use mainUserWithdrawal", async function() {
+
+				// Get the mainUser's starting account balance
+				const startingBalance = await ethers.provider.getBalance(mainAccount.address);
+
+				// Returns a new instance of the savingsAccount contract connected to mainAccount
+				const instanceContractAsMainUser = instanceContract.connect(mainAccount);
+
+				// Make withdrawal as mainUser
+				const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+				const transactionReceipt = await transactionResponse.wait(1);
+				const { gasUsed, effectiveGasPrice } = transactionReceipt; // 11:30:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+				const gasCost = gasUsed.mul(effectiveGasPrice);
+
+				// Get the mainUser's ending account balance
+				const endingBalance = await ethers.provider.getBalance(mainAccount.address);
+
+				assert.equal(endingBalance.add(gasCost).toString(), startingBalance.add(mainUserWithdrawalLimit).toString());
+			});
+
+			it("backupUser can NOT use mainUserWithdrawal", async function() {
+
+				// Returns a new instance of the savingsAccount contract connected to backupAccount
+				const instanceContractAsBackupUser = instanceContract.connect(backupAccount);
+
+				// Attempt withdrawal as backupUser
+				await expect(instanceContractAsBackupUser.mainUserWithdrawal(mainUserWithdrawalLimit)).to.be.revertedWith(
+					"SavingsAccount__notOwner"
+				);
+			});
+
+			it("mainUser can not withdraw more than their withdrawalLimit", async function() {
+
+				// Returns a new instance of the savingsAccount contract connected to mainAccount
+				const instanceContractAsMainUser = instanceContract.connect(mainAccount);
+
+				// Make withdrawal larger than withdrawalLimit
+				await expect(instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit.add("1"))).to.be.revertedWith(
+					"SavingsAccount__MainWithdrawalTooBig"
+				);
+			});
+
+			it("mainUser can not withdraw more than once per day", async () => {
+				// Returns a new instance of the savingsAccount contract connected to mainAccount
+				const instanceContractAsMainUser = instanceContract.connect(mainAccount);
+
+				// Make withdrawal as mainUser
+				const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+
+				// Attempt to make second withdrawal
+				await expect(instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit)).to.be.revertedWith(
+					"SavingsAccount__MainWithdrawalAlreadyMadeToday"
+				);
+			});
+
+			it("mainUser can withdraw today, and the next day", async () => {
+
+				// Get the mainUser's starting account balance
+				const startingBalance = await ethers.provider.getBalance(mainAccount.address);
+
+				// Returns a new instance of the savingsAccount contract connected to mainAccount
+				const instanceContractAsMainUser = instanceContract.connect(mainAccount);
+
+				// Make withdrawal as mainUser and get gasCost1 from the transaction
+				const transactionResponse1 = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+				const transactionReceipt1 = await transactionResponse1.wait(1);
+				const gasUsed1 = transactionReceipt1.gasUsed;
+				const effectiveGasPrice1 = transactionReceipt1.effectiveGasPrice;
+
+				const gasCost1 = gasUsed1.mul(effectiveGasPrice1);
+
+				// Simulate time moving forward on blockchain
+				// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+				await network.provider.send("evm_increaseTime", [SECONDS_IN_DAY + 1]);
+				await network.provider.request({ method: "evm_mine", params: [] });
+
+				// Make withdrawal "next day" and get gasCost2 from the transaction
+				const transactionResponse2 = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+				const transactionReceipt2 = await transactionResponse2.wait(1);
+				const gasUsed2 = transactionReceipt2.gasUsed;
+				const effectiveGasPrice2 = transactionReceipt2.effectiveGasPrice;
+
+				const gasCost2 = gasUsed2.mul(effectiveGasPrice2);
+
+				const gasCostTotal = gasCost1.add(gasCost2);
+
+				// Get the mainUser's ending account balance
+				const endingBalance = await ethers.provider.getBalance(mainAccount.address);
+
+				assert.equal(endingBalance.add(gasCostTotal).toString(), startingBalance.add(mainUserWithdrawalLimit).add(mainUserWithdrawalLimit).toString());
+
+			});
+
+
+		})
 
 
 		// 	await deployments.fixture(["mocks", "savingsAccount"]) // Deploys modules with the tags "mocks" and "savingsAccount"
