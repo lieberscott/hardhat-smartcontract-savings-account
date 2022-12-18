@@ -52,7 +52,6 @@ contract SavingsAccount {
       revert SavingsAccount__BackupWithdrawalLimitTooSmall();
     }
 
-    // msg.sender MAY BE THE FACTORY CONTRACT, NEED TO CHECK THIS
     i_mainAccount = _mainAccount;
     i_backupAccount = _backupAccount;
     i_mainAccountWithdrawalLimit = _mainAccountWithdrawalLimit;
@@ -78,16 +77,13 @@ contract SavingsAccount {
     // Solidity uses integer division, which is equivalent to floored division: 5 / 2 == 2
     // The requirement below should increment by 1 every day at 00:00 UTC (and should be the number of days since Jan. 1, 1970)
     // This way, the contract resets at a given time (00:00 UTC), rather than setting a new 24-hour wait after a withdrawal to make another withdrawal
-    // CHECK IF THIS IS RIGHT
-    // MAKE SURE THE TYPES ALL WORK RIGHT TOGETHER (SECONDS_IN_DAY is a uint24, mainAccountLastWithdrawalDay is a uint256, etc.)
-    if (block.timestamp / SECONDS_IN_DAY <= s_mainAccountLastWithdrawalDay) {
+    if (block.timestamp / SECONDS_IN_DAY == s_mainAccountLastWithdrawalDay) {
       revert SavingsAccount__MainWithdrawalAlreadyMadeToday();
     }
 
     s_mainAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
 
     // send amount to mainAccount
-    // (bool callSuccess,) = payable(msg.sender).call{value: address(this).balance}("");
     (bool callSuccess,) = payable(i_mainAccount).call{value: _withdrawalAmount}("");
 
     if (!callSuccess) {
@@ -104,7 +100,7 @@ contract SavingsAccount {
       revert SavingsAccount__BackupWithdrawalTooBig();
     }
 
-    if (block.timestamp / SECONDS_IN_DAY <= s_backupAccountLastWithdrawalDay) {
+    if (block.timestamp / SECONDS_IN_DAY == s_backupAccountLastWithdrawalDay) {
       revert SavingsAccount__BackupWithdrawalAlreadyMadeToday();
     }
 
@@ -127,6 +123,7 @@ contract SavingsAccount {
 
   /**
    * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
+   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
    */
   function mainAccountMakeBigWithdrawal(uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
     if (_withdrawalAmount > address(this).balance) {
