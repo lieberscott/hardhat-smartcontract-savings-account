@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
 error SavingsAccount__notOwner();
 error SavingsAccount__notBackup();
 error SavingsAccount__MainWithdrawalLimitTooSmall();
@@ -11,8 +13,9 @@ error SavingsAccount__MainWithdrawalAlreadyMadeToday();
 error SavingsAccount__CallFail();
 error SavingsAccount__BackupWithdrawalTooBig();
 error SavingsAccount__BackupWithdrawalAlreadyMadeToday();
-error SavingsAccount__NotEnoughEth();
+error SavingsAccount__NotEnoughBalance();
 error SavingsAccount__LargeWithdrawalNotAuthorized();
+error SavingsAccount__AlreadySetTokenLimit();
 
 
 /** @title A contract to add a backup user to protect funds
@@ -24,11 +27,19 @@ contract SavingsAccount {
 
   uint24 public constant SECONDS_IN_DAY = 86400;
 
+  struct TokenWithdrawalData {
+    uint256 mainAccountWithdrawalLimit;
+    uint256 backupAccountWithdrawalLimit;
+    uint256 mainAccountLastWithdrawalDay;
+    uint256 backupAccountLastWithdrawalDay;
+  }
+
   address private immutable i_mainAccount;
   address private immutable i_backupAccount;
   uint256 private immutable i_mainAccountWithdrawalLimit;
   uint256 private immutable i_backupAccountWithdrawalLimit;
-  uint256 private s_mainAccountLastWithdrawalDay = 0; // time in seconds since Jan. 1, 1970
+  mapping(address => TokenWithdrawalData) private s_tokenToWithdrawalData;
+  uint256 private s_mainAccountLastWithdrawalDay = 0; // days since Jan. 1, 1970
   uint256 private s_backupAccountLastWithdrawalDay = 0;
   uint256 private s_backupAccountBigWithdrawalDay = 0;
 
@@ -41,7 +52,6 @@ contract SavingsAccount {
     if (msg.sender != i_backupAccount) { revert SavingsAccount__notBackup(); }
     _; // <- indicates to run the rest of the code; if _; was before the require statement, it would runn the code in the function first, then run the require statement after
   }
-
 
   constructor(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit) payable {
     if (_mainAccountWithdrawalLimit <= 0) {
@@ -127,7 +137,7 @@ contract SavingsAccount {
    */
   function mainAccountMakeBigWithdrawal(uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
     if (_withdrawalAmount > address(this).balance) {
-      revert SavingsAccount__NotEnoughEth();
+      revert SavingsAccount__NotEnoughBalance();
     }
 
     // require time to be within the same day as the withdrawal
@@ -139,6 +149,78 @@ contract SavingsAccount {
     (bool callSuccess,) = payable(_withdrawalAddress).call{value: _withdrawalAmount}("");
   }
 
+    /**
+   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
+   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
+   */
+  function mainAccountMakeBigTokenWithdrawal(address _tokenAddress, uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
+
+    // require time to be within the same day as the withdrawal
+    if (block.timestamp / SECONDS_IN_DAY != s_backupAccountBigWithdrawalDay) {
+      revert SavingsAccount__LargeWithdrawalNotAuthorized();
+    }
+    ERC20 erc20Token = ERC20(_tokenAddress);
+    erc20Token.transfer(_withdrawalAddress, _withdrawalAmount);
+  }
+
+
+
+  /**
+   * @notice this function is called when the mainAccount user wants to transfer an ERC-20 token back to their main Account
+   */
+  function transferErcTokenMain(address _tokenAddress, uint256 _amount) public onlyMainAccount {
+    if (_amount > s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit) {
+      revert SavingsAccount__MainWithdrawalTooBig();
+    }
+    if (block.timestamp / SECONDS_IN_DAY == s_tokenToWithdrawalData[_tokenAddress].mainAccountLastWithdrawalDay) {
+      revert SavingsAccount__MainWithdrawalAlreadyMadeToday();
+    }
+    ERC20 erc20Token = ERC20(_tokenAddress);
+    erc20Token.transfer(i_mainAccount, _amount);
+    s_tokenToWithdrawalData[_tokenAddress].mainAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
+  }
+
+  /**
+   * @notice this function is called when the backupAccount user wants to transfer an ERC-20 token back to their backup Account
+   */
+  function transferErcTokenBackup(address _tokenAddress, uint256 _amount) public onlyBackupAccount {
+    ERC20 erc20Token = ERC20(_tokenAddress);
+    if (_amount > s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit) {
+      revert SavingsAccount__BackupWithdrawalTooBig();
+    }
+    if (block.timestamp / SECONDS_IN_DAY == s_tokenToWithdrawalData[_tokenAddress].backupAccountLastWithdrawalDay) {
+      revert SavingsAccount__BackupWithdrawalAlreadyMadeToday();
+    }
+    erc20Token.transfer(i_backupAccount, _amount);
+    s_tokenToWithdrawalData[_tokenAddress].backupAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
+
+  }
+
+  /**
+   * @notice this function is called when the backupAccount user wants to transfer an ERC-20 token back to their backup Account
+   * @dev the mainAccount user can only call this function once
+   */
+  function setTokenLimits (address _tokenAddress, uint256 _mainAccountLimit, uint256 _backupAccountLimit) public onlyMainAccount {
+    // This check restricts the mainAccount holder from setting the withdrawal limit for any given ERC-20 token once
+    if (s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit > 0 || s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit > 0) {
+      revert SavingsAccount__AlreadySetTokenLimit();
+    }
+    // these next two checks prevent the mainUser from setting a withdrawal limit of 0
+    if (_mainAccountLimit <= 0) {
+      revert SavingsAccount__MainWithdrawalLimitTooSmall();
+    }
+    if (_backupAccountLimit <= 0) {
+      revert SavingsAccount__BackupWithdrawalLimitTooSmall();
+    }
+
+    s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit = _mainAccountLimit;
+    s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit = _backupAccountLimit;
+  }
+
+  function getTokenBalance(address _tokenAddress) public view returns (uint256) {
+    ERC20 erc20token = ERC20(_tokenAddress);
+    return erc20token.balanceOf(address(this));
+  }
 
   function getMainAccount() public view returns (address) {
     return i_mainAccount;
@@ -154,6 +236,10 @@ contract SavingsAccount {
 
   function getBackupAccountWithdrawalLimit() public view returns (uint256) {
     return i_backupAccountWithdrawalLimit;
+  }
+
+  function getMainAccountTokenWithdrawalLimit(address _tokenAddress) public view returns (TokenWithdrawalData memory) {
+    return s_tokenToWithdrawalData[_tokenAddress];
   }
 
   function getMainAccountLastWithdrawalDay() public view returns (uint256) {

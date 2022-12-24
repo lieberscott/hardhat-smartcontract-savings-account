@@ -5,11 +5,9 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 !developmentChains.includes(network.name)
 	? describe.skip
 	: describe("Unit Tests", () => {
-		let savingsAccountContract, vrfCoordinatorV2Mock, savingsAccountEntranceFee, interval, deployer, mainAccount, backupAccount;
+		let deployer, mainAccount, backupAccount;
 
 		let savingsAccountFactory, factoryContract;
-
-		let savingsAccountInstance;
 
 		const mainUserWithdrawalLimit = ethers.utils.parseEther("1");
 		const backupUserWithdrawalLimit = ethers.utils.parseEther("0.05");
@@ -17,7 +15,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 		const SECONDS_IN_DAY = 86400;
 
 		beforeEach(async () => {
-			accounts = await ethers.getSigners(); // could also do with getNamedAccounts
+			const accounts = await ethers.getSigners(); // could also do with getNamedAccounts
 			deployer = accounts[0];
 			mainAccount = accounts[1];
 			backupAccount = accounts[2];
@@ -41,10 +39,17 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				expect(contractAddress).to.not.equal(blankAddress);
 			});
 	
-			it("Factory rejects new savingsAccount if account already exists", async function() {
+			it("Factory rejects new savingsAccount if mainUser account already exists", async function() {
 				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
 				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0")).to.be.revertedWith(
 					"SavingsAccountFactory__AccountAlreadyExists"
+				);
+			});
+
+			it("Factory rejects new savingsAccount if backupUser account already exists", async function() {
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
+				await expect(factoryContract.createSavingsAccount(deployer.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+					"SavingsAccountFactory__BackupAccountAlreadyExists"
 				);
 			});
 	
@@ -79,6 +84,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 
 		describe("Child tests", () => {
+			// it can receive ERC20 tokens and have a balance
+			// 
 			
 			let instanceContract, instanceContractAsMainUser, instanceContractAsBackupUser, savingsAccountContractAddress;
 

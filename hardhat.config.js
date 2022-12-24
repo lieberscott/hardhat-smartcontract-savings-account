@@ -13,14 +13,17 @@ require("dotenv").config()
 const MAINNET_RPC_URL =
     process.env.MAINNET_RPC_URL ||
     process.env.ALCHEMY_MAINNET_RPC_URL ||
-    "https://eth-mainnet.alchemyapi.io/v2/your-api-key"
+    "https://eth-mainnet.alchemyapi.io/v2/your-api-key";
 const GOERLI_RPC_URL =
-    process.env.GOERLI_RPC_URL || "https://eth-goerli.alchemyapi.io/v2/your-api-key"
+    process.env.GOERLI_RPC_URL || "https://eth-goerli.alchemyapi.io/v2/your-api-key";
 const POLYGON_MAINNET_RPC_URL =
-    process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-mainnet.alchemyapi.io/v2/your-api-key"
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x"
+    process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-mainnet.alchemyapi.io/v2/your-api-key";
+const MUMBAI_RPC_URL = process.env.MUMBAI_RPC_URL || "https://polygon-mumbai.alchemyapi.io/v2/your-api-key";
+const ARBITRUM_GOERLI_RPC_URL = process.env.ARBITRUM_GOERLI_RPC_URL || "https://arb-goerli.alchemyapi.io/v2/your-api-key";
+const ARBITRUM_RPC_URL = process.env.ARBITRUM_RPC_URL || "https://arb-mainnet.alchemyapi.io/v2/your-api-key";
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x";
 // optional
-const MNEMONIC = process.env.MNEMONIC || "your mnemonic"
+const MNEMONIC = process.env.MNEMONIC || "your mnemonic";
 
 // Your API key for Etherscan, obtain one at https://etherscan.io/
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "Your etherscan API key"
@@ -38,6 +41,7 @@ module.exports = {
             chainId: 31337,
         },
         localhost: {
+            url: "http://127.0.0.1:8545/",
             chainId: 31337,
         },
         goerli: {
@@ -49,6 +53,18 @@ module.exports = {
             saveDeployments: true,
             chainId: 5,
         },
+        arbitrum_goerli: {
+            url: ARBITRUM_GOERLI_RPC_URL,
+            accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
+            saveDeployments: true,
+            chainId: 421613,
+        },
+        mumbai: {
+            url: MUMBAI_RPC_URL,
+            accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
+            saveDeployments: true,
+            chainId: 80001,
+        },
         mainnet: {
             url: MAINNET_RPC_URL,
             accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
@@ -57,6 +73,15 @@ module.exports = {
             //   },
             saveDeployments: true,
             chainId: 1,
+        },
+        arbitrum: {
+            url: ARBITRUM_RPC_URL,
+            accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
+            //   accounts: {
+            //     mnemonic: MNEMONIC,
+            //   },
+            saveDeployments: true,
+            chainId: 42161,
         },
         polygon: {
             url: POLYGON_MAINNET_RPC_URL,
@@ -97,6 +122,11 @@ module.exports = {
         deployer: {
             default: 0, // here this will by default take the first account as deployer
             1: 0, // similarly on mainnet it will take the first account as deployer. Note though that depending on how hardhat network are configured, the account 0 on one network can be different than on another
+            5: 0, // goerli
+            42161: 0, // arbitrum mainnet
+            421613: 0, // arbitrum goerli
+            137: 0, // polygon mainnet
+            80001: 0, // polygon mumbai
         },
         player: {
             default: 1,

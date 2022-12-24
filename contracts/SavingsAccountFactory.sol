@@ -5,8 +5,12 @@ pragma solidity ^0.8.0;
 import "./SavingsAccount.sol";
 
 error SavingsAccountFactory__AccountAlreadyExists();
+error SavingsAccountFactory__BackupAccountAlreadyExists();
+
 
 contract SavingsAccountFactory {
+
+  address public immutable i_owner;
 
   // this struct is necessary in order to check if the mainAccount already has a savings account to prevent it from opening two
   struct SavingsAccountData {
@@ -20,10 +24,16 @@ contract SavingsAccountFactory {
 
   event SavingsAccountCreated(address indexed mainAccount, address indexed backupAccount, uint256 mainAccountWithdrawalLimit, uint256 backupAccountWithdrawalLimit);
 
+  constructor () {
+    i_owner = msg.sender;
+  }
 
   function createSavingsAccount(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit) payable public {
     if (mainAccountToContract[_mainAccount].exists) {
       revert SavingsAccountFactory__AccountAlreadyExists();
+    }
+    if (backupAccountToContract[_backupAccount].exists) {
+      revert SavingsAccountFactory__BackupAccountAlreadyExists();
     }
     
     // this is a way to extract the contract address from the returned value
