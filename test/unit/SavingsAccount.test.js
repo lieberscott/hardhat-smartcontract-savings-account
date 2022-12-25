@@ -9,6 +9,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 		let savingsAccountFactory, factoryContract;
 
+		let savingsAccountContractAddress;
+
 		const mainUserWithdrawalLimit = ethers.utils.parseEther("1");
 		const backupUserWithdrawalLimit = ethers.utils.parseEther("0.05");
 		const blankAddress = "0x0000000000000000000000000000000000000000";
@@ -62,8 +64,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			it("SavingsAccount contract can receive ETH upon being deployed", async function() {
 	
 				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, { value: mainUserWithdrawalLimit });
-				savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
-				const contractBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
+				const address = await factoryContract.getContractFromMainAddress(mainAccount.address);
+				const contractBalance = await ethers.provider.getBalance(address);
 				
 				assert.equal(contractBalance.toString(), mainUserWithdrawalLimit);
 			});
@@ -84,10 +86,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 
 		describe("Child tests", () => {
-			// it can receive ERC20 tokens and have a balance
-			// 
 			
-			let instanceContract, instanceContractAsMainUser, instanceContractAsBackupUser, savingsAccountContractAddress;
+			let instanceContract, instanceContractAsMainUser, instanceContractAsBackupUser;
 
 			beforeEach(async () => {
 				// deploy a child savingsAccount contract
@@ -412,6 +412,180 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await expect(instanceContractAsMainUser.mainAccountMakeBigWithdrawal(accountBalance, mainAccount.address)).to.be.revertedWith(
 						"SavingsAccount__LargeWithdrawalNotAuthorized"
 					);
+				});
+			});
+
+			describe("Token tests", () => {
+				// it can receive ERC20 tokens and have a balance
+				// it can send ERC20 tokens and its balance is reduced, and the mainAccount is increased
+				let myToken, myTokenContract, tokenContractAddress, ercInstanceAsMainAccount;
+
+				const startingBalance = 1000;
+				const transferAmount = 50;
+
+				beforeEach(async () => {
+					myToken = await ethers.getContractFactory("MyToken");
+					// add 1000 of MyTokens to the savingsAccountContractAddress, and the mainAccount
+					myTokenContract = await myToken.deploy(savingsAccountContractAddress, mainAccount.address, startingBalance);
+					tokenContractAddress = myTokenContract.address;
+					// const ercInstanceContract = myToken.attach(tokenContractAddress);
+					const signerMain = await ethers.getSigner(mainAccount.address);
+					ercInstanceAsMainAccount = myTokenContract.connect(signerMain);
+				});
+
+				it("savingsAccount can receive ERC20 tokens", async () => {
+					await ercInstanceAsMainAccount.transfer(savingsAccountContractAddress, transferAmount);
+					const mainAccountBalance = await ercInstanceAsMainAccount.balanceOf(mainAccount.address);
+					const savingsAccountBalance = await ercInstanceAsMainAccount.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(mainAccountBalance, startingBalance - transferAmount);
+					assert.equal(savingsAccountBalance, startingBalance + transferAmount);
+				});
+
+				it("mainUser can NOT send ERC20 tokens from savingsAccount before setting limits", async () => {
+					await expect(instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
+						"SavingsAccount__MainWithdrawalTooBig"
+					);
+				});
+
+				it("only mainUser can call transferErcTokenMain function", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					await expect(instanceContractAsBackupUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
+						"SavingsAccount__notOwner"
+					);
+				});
+
+				it("only backupUser can call transferErcTokenBackup function", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					await expect(instanceContractAsMainUser.transferErcTokenBackup(tokenContractAddress, transferAmount)).to.be.revertedWith(
+						"SavingsAccount__notBackup"
+					);
+				});
+
+				it("mainUser can send ERC20 tokens from savingsAccount back to herself after setting withdrawal limits", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Make the transfer
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+					const mainAccountBalance = await myTokenContract.balanceOf(mainAccount.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(mainAccountBalance, startingBalance + transferAmount);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount);
+				});
+
+				it("backupUser can send ERC20 tokens from savingsAccount to herself after mainUser sets withdrawal limits", async () => {
+					// Main user sets the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Backup user makes the transfer
+					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+					const backupAccountBalance = await myTokenContract.balanceOf(backupAccount.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(backupAccountBalance, transferAmount);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount);
+				});
+
+				it("ERC20 tokens can not be transferred more than once per day by mainAccount", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Make the transfer
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+
+					await expect(instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
+						"SavingsAccount__MainWithdrawalAlreadyMadeToday"
+					);
+				});
+
+				it("ERC20 tokens can not be transferred more than once per day by backupAccount", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Make the transfer
+					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+
+					await expect(instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount)).to.be.revertedWith(
+						"SavingsAccount__BackupWithdrawalAlreadyMadeToday"
+					);
+				});
+
+				it("ERC20 tokens can be transferred by mainUser after a day has passed", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Make the transfer
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+
+					// Simulate time moving forward on blockchain
+					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+					await network.provider.send("evm_increaseTime", [SECONDS_IN_DAY + 1]);
+					await network.provider.request({ method: "evm_mine", params: [] });
+
+					// Make the next-day transfer
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+
+					const mainAccountBalance = await myTokenContract.balanceOf(mainAccount.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(mainAccountBalance, startingBalance + transferAmount + transferAmount);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount - transferAmount);
+				});
+
+				it("ERC20 tokens can be transferred by backupUser after a day has passed", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
+
+					// Make the transfer
+					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+
+					// Simulate time moving forward on blockchain
+					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+					await network.provider.send("evm_increaseTime", [SECONDS_IN_DAY + 1]);
+					await network.provider.request({ method: "evm_mine", params: [] });
+
+					// Make the next-day transfer
+					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+
+					const backupAccountBalance = await myTokenContract.balanceOf(backupAccount.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(backupAccountBalance, transferAmount + transferAmount);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount - transferAmount);
+				});
+
+				it("Large ERC20 tokens can be transferred after enabled by backupUser", async () => {
+					// Enable big withdrawals
+					await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+
+					// Make the transfer
+					await instanceContractAsMainUser.mainAccountMakeBigTokenWithdrawal(tokenContractAddress, transferAmount + 1, mainAccount.address);
+
+					const mainAccountBalance = await myTokenContract.balanceOf(mainAccount.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(mainAccountBalance, startingBalance + transferAmount + 1);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount - 1);
+				});
+
+				it("Large ERC20 tokens can be transferred to another account", async () => {
+					// Enable big withdrawals
+					await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+
+					// Make the transfer
+					await instanceContractAsMainUser.mainAccountMakeBigTokenWithdrawal(tokenContractAddress, transferAmount + 1, deployer.address);
+
+					const deployerAccountBalance = await myTokenContract.balanceOf(deployer.address);
+					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
+
+					assert.equal(deployerAccountBalance, transferAmount + 1);
+					assert.equal(savingsAccountBalance, startingBalance - transferAmount - 1);
 				});
 			});
 

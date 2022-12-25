@@ -149,22 +149,6 @@ contract SavingsAccount {
     (bool callSuccess,) = payable(_withdrawalAddress).call{value: _withdrawalAmount}("");
   }
 
-    /**
-   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
-   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
-   */
-  function mainAccountMakeBigTokenWithdrawal(address _tokenAddress, uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
-
-    // require time to be within the same day as the withdrawal
-    if (block.timestamp / SECONDS_IN_DAY != s_backupAccountBigWithdrawalDay) {
-      revert SavingsAccount__LargeWithdrawalNotAuthorized();
-    }
-    ERC20 erc20Token = ERC20(_tokenAddress);
-    erc20Token.transfer(_withdrawalAddress, _withdrawalAmount);
-  }
-
-
-
   /**
    * @notice this function is called when the mainAccount user wants to transfer an ERC-20 token back to their main Account
    */
@@ -215,6 +199,20 @@ contract SavingsAccount {
 
     s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit = _mainAccountLimit;
     s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit = _backupAccountLimit;
+  }
+
+  /**
+   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
+   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
+   */
+  function mainAccountMakeBigTokenWithdrawal(address _tokenAddress, uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
+
+    // require time to be within the same day as the withdrawal
+    if (block.timestamp / SECONDS_IN_DAY != s_backupAccountBigWithdrawalDay) {
+      revert SavingsAccount__LargeWithdrawalNotAuthorized();
+    }
+    ERC20 erc20Token = ERC20(_tokenAddress);
+    erc20Token.transfer(_withdrawalAddress, _withdrawalAmount);
   }
 
   function getTokenBalance(address _tokenAddress) public view returns (uint256) {
