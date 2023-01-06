@@ -22,13 +22,13 @@ contract SavingsAccountFactory {
   mapping(address => SavingsAccountData) private backupAccountToContract; // mapping from backupAccount address => contract address
 
 
-  event SavingsAccountCreated(address indexed mainAccount, address indexed backupAccount, uint256 mainAccountWithdrawalLimit, uint256 backupAccountWithdrawalLimit);
+  event SavingsAccountCreated(address indexed mainAccount, address indexed backupAccount, uint256 mainAccountWithdrawalLimit, uint256 backupAccountWithdrawalLimit, string name);
 
   constructor () {
     i_owner = msg.sender;
   }
 
-  function createSavingsAccount(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit) payable public {
+  function createSavingsAccount(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit, string memory _name) payable public {
     if (mainAccountToContract[_mainAccount].exists) {
       revert SavingsAccountFactory__AccountAlreadyExists();
     }
@@ -37,14 +37,14 @@ contract SavingsAccountFactory {
     }
     
     // this is a way to extract the contract address from the returned value
-    address _contractAddress = address((new SavingsAccount){value: msg.value}(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit));
+    address _contractAddress = address((new SavingsAccount){value: msg.value}(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit, _name));
 
     mainAccountToContract[_mainAccount].contractAddress = _contractAddress;
     mainAccountToContract[_mainAccount].exists = true;
     backupAccountToContract[_backupAccount].contractAddress = _contractAddress;
     backupAccountToContract[_backupAccount].exists = true;
 
-    emit SavingsAccountCreated(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit);
+    emit SavingsAccountCreated(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit, _name);
 
   }
 

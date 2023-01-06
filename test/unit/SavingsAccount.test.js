@@ -2,6 +2,8 @@ const { assert, expect } = require("chai")
 const { network, deployments, ethers } = require("hardhat")
 const { developmentChains, networkConfig } = require("../../helper-hardhat-config")
 
+// MAKE SURE IT WORKS FOR TRANSFERRING LINK (DERIVATIVES OF ERC20s)
+
 !developmentChains.includes(network.name)
 	? describe.skip
 	: describe("Unit Tests", () => {
@@ -36,34 +38,34 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			});
 	
 			it("Factory adds mainAccount to mapping upon savingsAccount deploy", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
 				const contractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				expect(contractAddress).to.not.equal(blankAddress);
 			});
 	
 			it("Factory rejects new savingsAccount if mainUser account already exists", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0", "Al's Account")).to.be.revertedWith(
 					"SavingsAccountFactory__AccountAlreadyExists"
 				);
 			});
 
 			it("Factory rejects new savingsAccount if backupUser account already exists", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit);
-				await expect(factoryContract.createSavingsAccount(deployer.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
+				await expect(factoryContract.createSavingsAccount(deployer.address, backupAccount.address, "0", "0", "Al's Account")).to.be.revertedWith(
 					"SavingsAccountFactory__BackupAccountAlreadyExists"
 				);
 			});
 	
 			it("savingsAccount deploy fails if mainWithdrawalLimit is 0", async function() {
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0")).to.be.revertedWith(
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0", "Scott's Account")).to.be.revertedWith(
 					"SavingsAccount__MainWithdrawalLimitTooSmall"
 				);
 			});
 	
 			it("SavingsAccount contract can receive ETH upon being deployed", async function() {
 	
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, { value: mainUserWithdrawalLimit });
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: mainUserWithdrawalLimit });
 				const address = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				const contractBalance = await ethers.provider.getBalance(address);
 				
@@ -71,7 +73,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			});
 	
 			it("Factory emits event upon savingsAccount deploy", async () => {
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit)).to.emit(
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account")).to.emit(
 					factoryContract,
 					"SavingsAccountCreated"
 				)
@@ -79,7 +81,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					mainAccount.address,
 					backupAccount.address,
 					mainUserWithdrawalLimit,
-					backupUserWithdrawalLimit
+					backupUserWithdrawalLimit,
+					"Scott's Account"
 				)
 			});
 		});
@@ -91,7 +94,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 			beforeEach(async () => {
 				// deploy a child savingsAccount contract
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, { value: ethers.utils.parseEther("3")});
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: ethers.utils.parseEther("3")});
 				// get the newly deployed child contract's address
 				savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				// create a connection to the generic SavingsAccount.sol contract

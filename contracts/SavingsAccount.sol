@@ -42,6 +42,7 @@ contract SavingsAccount {
   uint256 private s_mainAccountLastWithdrawalDay = 0; // days since Jan. 1, 1970
   uint256 private s_backupAccountLastWithdrawalDay = 0;
   uint256 private s_backupAccountBigWithdrawalDay = 0;
+  string private i_name = ""; // human-readable name
 
   modifier onlyMainAccount {
     if (msg.sender != i_mainAccount) { revert SavingsAccount__notOwner(); }
@@ -53,7 +54,7 @@ contract SavingsAccount {
     _; // <- indicates to run the rest of the code; if _; was before the require statement, it would runn the code in the function first, then run the require statement after
   }
 
-  constructor(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit) payable {
+  constructor(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit, string memory _name) payable {
     if (_mainAccountWithdrawalLimit <= 0) {
       revert SavingsAccount__MainWithdrawalLimitTooSmall();
     }
@@ -66,6 +67,7 @@ contract SavingsAccount {
     i_backupAccount = _backupAccount;
     i_mainAccountWithdrawalLimit = _mainAccountWithdrawalLimit;
     i_backupAccountWithdrawalLimit = _backupAccountWithdrawalLimit;
+    i_name = _name;
   }
 
   /**
@@ -215,6 +217,10 @@ contract SavingsAccount {
     erc20Token.transfer(_withdrawalAddress, _withdrawalAmount);
   }
 
+  function getEthBalance() public view returns (uint256) {
+    return address(this).balance;
+  }
+
   function getTokenBalance(address _tokenAddress) public view returns (uint256) {
     ERC20 erc20token = ERC20(_tokenAddress);
     return erc20token.balanceOf(address(this));
@@ -236,7 +242,7 @@ contract SavingsAccount {
     return i_backupAccountWithdrawalLimit;
   }
 
-  function getMainAccountTokenWithdrawalLimit(address _tokenAddress) public view returns (TokenWithdrawalData memory) {
+  function getTokenWithdrawalData(address _tokenAddress) public view returns (TokenWithdrawalData memory) {
     return s_tokenToWithdrawalData[_tokenAddress];
   }
 
@@ -250,6 +256,10 @@ contract SavingsAccount {
 
   function getBackupAccountBigWithdrawalDay() public view returns (uint256) {
     return s_backupAccountBigWithdrawalDay;
+  }
+
+  function getName() public view returns (string memory) {
+    return i_name;
   }
 
 }

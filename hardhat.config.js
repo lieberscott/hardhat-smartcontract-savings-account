@@ -42,7 +42,7 @@ module.exports = {
         },
         localhost: {
             url: "http://127.0.0.1:8545/",
-            chainId: 31337,
+            chainId: 1337,
         },
         goerli: {
             url: GOERLI_RPC_URL,
