@@ -79,12 +79,8 @@ contract SavingsAccount {
 
   /**
    * @notice allows users to withdraw up to their daily limit
-   * @param _withdrawalAmount how much the mainUser wishes to withdraw that day
    */
-  function mainUserWithdrawal(uint256 _withdrawalAmount) public onlyMainAccount {
-    if (_withdrawalAmount > i_mainAccountWithdrawalLimit) {
-      revert SavingsAccount__MainWithdrawalTooBig();
-    }
+  function mainUserWithdrawal() public onlyMainAccount {
 
     // Solidity uses integer division, which is equivalent to floored division: 5 / 2 == 2
     // The requirement below should increment by 1 every day at 00:00 UTC (and should be the number of days since Jan. 1, 1970)
@@ -96,7 +92,7 @@ contract SavingsAccount {
     s_mainAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
 
     // send amount to mainAccount
-    (bool callSuccess,) = payable(i_mainAccount).call{value: _withdrawalAmount}("");
+    (bool callSuccess,) = payable(i_mainAccount).call{value: address(this).balance < i_mainAccountWithdrawalLimit ? address(this).balance : i_mainAccountWithdrawalLimit}("");
 
     if (!callSuccess) {
       revert SavingsAccount__CallFail();
@@ -105,12 +101,8 @@ contract SavingsAccount {
 
   /**
    * @notice allows the backup user to withdraw up to their daily limit
-   * @param _withdrawalAmount how much the backupUser wishes to withdraw that day
    */
-  function backupUserWithdrawal(uint256 _withdrawalAmount) public onlyBackupAccount {
-    if (_withdrawalAmount > i_backupAccountWithdrawalLimit) {
-      revert SavingsAccount__BackupWithdrawalTooBig();
-    }
+  function backupUserWithdrawal() public onlyBackupAccount {
 
     if (block.timestamp / SECONDS_IN_DAY == s_backupAccountLastWithdrawalDay) {
       revert SavingsAccount__BackupWithdrawalAlreadyMadeToday();
@@ -119,7 +111,7 @@ contract SavingsAccount {
     s_backupAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
     
     // send amount to backupAccount
-    (bool callSuccess,) = payable(i_backupAccount).call{value: _withdrawalAmount}("");
+    (bool callSuccess,) = payable(i_backupAccount).call{value: address(this).balance < i_backupAccountWithdrawalLimit ? address(this).balance : i_backupAccountWithdrawalLimit}("");
 
     if (!callSuccess) {
       revert SavingsAccount__CallFail();

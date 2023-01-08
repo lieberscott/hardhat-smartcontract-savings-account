@@ -94,7 +94,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 			beforeEach(async () => {
 				// deploy a child savingsAccount contract
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: ethers.utils.parseEther("3")});
+				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: ethers.utils.parseEther("2.9")});
 				// get the newly deployed child contract's address
 				savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				// create a connection to the generic SavingsAccount.sol contract
@@ -161,7 +161,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				it("s_mainAccountLastWithdrawalDay updates once mainUser withdraws funds", async function() {
 	
 					// Make withdrawal as mainUser
-					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal();
 	
 					const s_mainAccountLastWithdrawalDay = await instanceContract.getMainAccountLastWithdrawalDay();
 	
@@ -175,7 +175,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					const startingBalance = await ethers.provider.getBalance(mainAccount.address);
 	
 					// Make withdrawal as mainUser
-					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal();
 					const transactionReceipt = await transactionResponse.wait(1);
 					const { gasUsed, effectiveGasPrice } = transactionReceipt; // 11:30:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
 					const gasCost = gasUsed.mul(effectiveGasPrice);
@@ -189,26 +189,20 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				it("backupUser can NOT use mainUserWithdrawal", async function() {
 	
 					// Attempt withdrawal as backupUser
-					await expect(instanceContractAsBackupUser.mainUserWithdrawal(mainUserWithdrawalLimit)).to.be.revertedWith(
+					await expect(instanceContractAsBackupUser.mainUserWithdrawal()).to.be.revertedWith(
 						"SavingsAccount__notOwner"
 					);
 				});
 	
-				it("mainUser can not withdraw more than their withdrawalLimit", async function() {
-	
-					// Make withdrawal larger than withdrawalLimit
-					await expect(instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit.add("1"))).to.be.revertedWith(
-						"SavingsAccount__MainWithdrawalTooBig"
-					);
-				});
+				
 	
 				it("mainUser can not withdraw more than once per day", async () => {
 	
 					// Make withdrawal as mainUser
-					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsMainUser.mainUserWithdrawal();
 	
 					// Attempt to make second withdrawal
-					await expect(instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit)).to.be.revertedWith(
+					await expect(instanceContractAsMainUser.mainUserWithdrawal()).to.be.revertedWith(
 						"SavingsAccount__MainWithdrawalAlreadyMadeToday"
 					);
 				});
@@ -219,7 +213,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					const startingBalance = await ethers.provider.getBalance(mainAccount.address);
 	
 					// Make withdrawal as mainUser and get gasCost1 from the transaction
-					const transactionResponse1 = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+					const transactionResponse1 = await instanceContractAsMainUser.mainUserWithdrawal();
 					const transactionReceipt1 = await transactionResponse1.wait(1);
 					const gasUsed1 = transactionReceipt1.gasUsed;
 					const effectiveGasPrice1 = transactionReceipt1.effectiveGasPrice;
@@ -232,7 +226,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await network.provider.request({ method: "evm_mine", params: [] });
 	
 					// Make withdrawal "next day" and get gasCost2 from the transaction
-					const transactionResponse2 = await instanceContractAsMainUser.mainUserWithdrawal(mainUserWithdrawalLimit);
+					const transactionResponse2 = await instanceContractAsMainUser.mainUserWithdrawal();
 					const transactionReceipt2 = await transactionResponse2.wait(1);
 					const gasUsed2 = transactionReceipt2.gasUsed;
 					const effectiveGasPrice2 = transactionReceipt2.effectiveGasPrice;
@@ -248,13 +242,70 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(endingBalance.add(gasCostTotal).toString(), startingBalance.add(mainUserWithdrawalLimit).add(mainUserWithdrawalLimit).toString());
 	
 				});
+
+				it("if balance is smaller than withdrawal amount, the remaining balance is withdrawn", async () => {
+	
+					// Get the mainUser's starting account balance
+					const startingBalance = await ethers.provider.getBalance(mainAccount.address);
+	
+					// Make withdrawal as mainUser and get gasCost1 from the transaction
+					const transactionResponse1 = await instanceContractAsMainUser.mainUserWithdrawal();
+					const transactionReceipt1 = await transactionResponse1.wait(1);
+					const gasUsed1 = transactionReceipt1.gasUsed;
+					const effectiveGasPrice1 = transactionReceipt1.effectiveGasPrice;
+	
+					const gasCost1 = gasUsed1.mul(effectiveGasPrice1);
+	
+					// Simulate time moving forward on blockchain
+					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+					await network.provider.send("evm_increaseTime", [SECONDS_IN_DAY + 1]);
+					await network.provider.request({ method: "evm_mine", params: [] });
+	
+					// Make withdrawal "next day" and get gasCost2 from the transaction
+					const transactionResponse2 = await instanceContractAsMainUser.mainUserWithdrawal();
+					const transactionReceipt2 = await transactionResponse2.wait(1);
+					const gasUsed2 = transactionReceipt2.gasUsed;
+					const effectiveGasPrice2 = transactionReceipt2.effectiveGasPrice;
+	
+					const gasCost2 = gasUsed2.mul(effectiveGasPrice2);
+
+					// Simulate time moving forward on blockchain
+					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
+					await network.provider.send("evm_increaseTime", [SECONDS_IN_DAY + 1]);
+					await network.provider.request({ method: "evm_mine", params: [] });
+
+
+					// Get remaining contract balance (0.9 ETH)
+					const contractBalance3 = await ethers.provider.getBalance(instanceContract.address)
+
+
+					// Make "third day" withdrawal as mainUser and get gasCost3 from the transaction
+					const transactionResponse3 = await instanceContractAsMainUser.mainUserWithdrawal();
+					const transactionReceipt3 = await transactionResponse3.wait(1);
+					const gasUsed3 = transactionReceipt3.gasUsed;
+					const effectiveGasPrice3 = transactionReceipt3.effectiveGasPrice;
+	
+					const gasCost3 = gasUsed3.mul(effectiveGasPrice3);
+
+	
+					// get total gas cost to add back to the endingBalance (since it will have been lost)
+					const gasCostTotal = gasCost1.add(gasCost2).add(gasCost3);
+	
+					// Get the mainUser's ending account balance
+					const endingBalance = await ethers.provider.getBalance(mainAccount.address);
+
+					const contractBalanceEnd = await ethers.provider.getBalance(instanceContract.address)
+	
+					assert.equal(endingBalance.add(gasCostTotal).toString(), startingBalance.add(mainUserWithdrawalLimit).add(mainUserWithdrawalLimit).add(contractBalance3).toString());
+					assert.equal(contractBalanceEnd.toString(), "0")
+				});
 			});
 
 			describe("backupUserWithdrawal tests", () => {
 				it("s_backupAccountLastWithdrawalDay updates once backupUser withdraws funds", async function() {
 	
 					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
 	
 					const s_backupAccountLastWithdrawalDay = await instanceContract.getBackupAccountLastWithdrawalDay();
 	
@@ -268,7 +319,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					const startingBalance = await ethers.provider.getBalance(backupAccount.address);
 	
 					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
 					const transactionReceipt = await transactionResponse.wait(1);
 					const { gasUsed, effectiveGasPrice } = transactionReceipt; // 11:30:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
 					const gasCost = gasUsed.mul(effectiveGasPrice);
@@ -282,26 +333,18 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				it("mainUser can NOT use backupUserWithdrawal", async function() {
 	
 					// Attempt withdrawal as backupUser
-					await expect(instanceContractAsMainUser.backupUserWithdrawal(backupUserWithdrawalLimit)).to.be.revertedWith(
+					await expect(instanceContractAsMainUser.backupUserWithdrawal()).to.be.revertedWith(
 						"SavingsAccount__notBackup"
-					);
-				});
-	
-				it("backupUser can not withdraw more than their withdrawalLimit", async function() {
-	
-					// Make withdrawal larger than withdrawalLimit
-					await expect(instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit.add("1"))).to.be.revertedWith(
-						"SavingsAccount__BackupWithdrawalTooBig"
 					);
 				});
 	
 				it("backupUser can not withdraw more than once per day", async () => {
 	
 					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit);
+					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
 	
 					// Attempt to make second withdrawal
-					await expect(instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit)).to.be.revertedWith(
+					await expect(instanceContractAsBackupUser.backupUserWithdrawal()).to.be.revertedWith(
 						"SavingsAccount__BackupWithdrawalAlreadyMadeToday"
 					);
 				});
@@ -312,7 +355,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					const startingBalance = await ethers.provider.getBalance(backupAccount.address);
 	
 					// Make withdrawal as backupUser and get gasCost1 from the transaction
-					const transactionResponse1 = await instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit);
+					const transactionResponse1 = await instanceContractAsBackupUser.backupUserWithdrawal();
 					const transactionReceipt1 = await transactionResponse1.wait(1);
 					const gasUsed1 = transactionReceipt1.gasUsed;
 					const effectiveGasPrice1 = transactionReceipt1.effectiveGasPrice;
@@ -325,7 +368,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await network.provider.request({ method: "evm_mine", params: [] });
 	
 					// Make withdrawal "next day" and get gasCost2 from the transaction
-					const transactionResponse2 = await instanceContractAsBackupUser.backupUserWithdrawal(backupUserWithdrawalLimit);
+					const transactionResponse2 = await instanceContractAsBackupUser.backupUserWithdrawal();
 					const transactionReceipt2 = await transactionResponse2.wait(1);
 					const gasUsed2 = transactionReceipt2.gasUsed;
 					const effectiveGasPrice2 = transactionReceipt2.effectiveGasPrice;
