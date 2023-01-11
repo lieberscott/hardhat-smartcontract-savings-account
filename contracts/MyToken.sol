@@ -12,4 +12,5 @@ contract MyToken is ERC20 {
     _mint(account1, initialSupply);
     _mint(account2, initialSupply);
   }
+
 }

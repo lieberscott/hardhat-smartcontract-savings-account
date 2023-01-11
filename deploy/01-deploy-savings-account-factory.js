@@ -32,23 +32,43 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
       // const factoryContract = ethers.getContractFactory("SavingsAccountFactory");
       console.log('deploying instance ...');
       const accounts = await ethers.getSigners(); // could also do with getNamedAccounts
-			const mainAccount = accounts[1];
-			const backupAccount = accounts[2];
+      const mainAccount = accounts[1];
+      const backupAccount = accounts[2];
 
       const factoryContract = await ethers.getContract("SavingsAccountFactory")
 
       const res = await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "1000000000000000000", "100000000000000000", "Scott's Account", { from: deployer, value: "3000000000000000000" })
-      console.log(`Instance deployed at ${res.address}`)
+      const res2 = await factoryContract.createSavingsAccount(backupAccount.address, mainAccount.address, "1000000000000000000", "100000000000000000", "Ryan's Account", { from: deployer, value: "3000000000000000000" })
+
+      console.log(`Instances deployed`)
+
+      // get contract instances so you can send the MyTokens to them
+
+      const mainUserInstanceAddress = (await factoryContract.getContractFromMainAddress(mainAccount.address)).toString()
+      const backupUserInstanceAddress = (await factoryContract.getContractFromMainAddress(backupAccount.address)).toString()
+
+      console.log("mainUserInstanceAddress : ", mainUserInstanceAddress);
+      console.log("backupUserInstanceAddress", backupUserInstanceAddress)
+
+      const initialTokenAmount = "100000000000000000000"
       
       console.log("Deploying MyToken.sol...")
-      const tokenContract = await deploy("MyToken", {
+      const tokenDeploy = await deploy("MyToken", {
         from: deployer,
         log: true,
-        args: [mainAccount.address, mainAccount.address, "100000000000000000000"],
+        args: [mainAccount.address, backupAccount.address, initialTokenAmount],
         // we need to wait if on a live network so we can verify properly
         waitConfirmations: network.config.blockConfirmations || 1,
     })
-    log(`tokenContract deployed at ${tokenContract.address}`);
+    log(`tokenContract deployed at ${tokenDeploy.address}`);
+
+    const tokenContract = await ethers.getContract("MyToken")
+
+    const transaction1 = await tokenContract.connect(mainAccount).transfer(mainUserInstanceAddress, initialTokenAmount)
+    const transaction2 = await tokenContract.connect(backupAccount).transfer(backupUserInstanceAddress, initialTokenAmount)
+
+    log("Transfered tokens to savings account addresses complete")
+
 
     }
 }

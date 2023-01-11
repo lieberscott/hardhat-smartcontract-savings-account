@@ -5,6 +5,7 @@ require("dotenv").config();
 // import { contractAddresses } from "../../nextjs-smartcontract-savings-account/constants"
 
 const FRONT_END_ADDRESSES_FILE  = "../nextjs-smartcontract-savings-account/constants/contractAddresses.json";
+const FRONT_END_MY_TOKEN_ADDRESS_FILE  = "../nextjs-smartcontract-savings-account/constants/myTokenAddress.json";
 const FRONT_END_FACTORY_ABI_FILE  = "../nextjs-smartcontract-savings-account/constants/factoryAbi.json";
 const FRONT_END_INSTANCE_ABI_FILE  = "../nextjs-smartcontract-savings-account/constants/instanceAbi.json";
 
@@ -27,6 +28,7 @@ const updateAbi = async () => {
 
 const updateContractAddresses = async () => {
     const savingsAccountFactory = ethers.getContractFactory("SavingsAccountFactory");
+    const myToken = ethers.getContractFactory("MyToken")
 
     const chainId = network.config.chainId.toString();
 
@@ -40,6 +42,18 @@ const updateContractAddresses = async () => {
         currentAddresses[chainId] = [savingsAccountFactory.address];
     }
     fs.writeFileSync(FRONT_END_ADDRESSES_FILE, JSON.stringify(currentAddresses));
+
+
+    const myTokenAddresses = JSON.parse(fs.readFileSync(FRONT_END_MY_TOKEN_ADDRESS_FILE, "utf8"));
+    if (chainId in currentAddresses && developmentChains.includes(network.name)) {
+        if (!myTokenAddresses[chainId].includes(myToken.address)) {
+            myTokenAddresses[chainId].push(myToken.address);
+        }
+    }
+    else {
+        myTokenAddresses[chainId] = [myToken.address];
+    }
+    fs.writeFileSync(FRONT_END_MY_TOKEN_ADDRESS_FILE, JSON.stringify(myTokenAddresses));
 }
 
 module.exports.tags = ["all", "frontend"];

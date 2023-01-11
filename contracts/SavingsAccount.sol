@@ -178,7 +178,7 @@ contract SavingsAccount {
    * @notice this function is called when the backupAccount user wants to transfer an ERC-20 token back to their backup Account
    * @dev the mainAccount user can only call this function once
    */
-  function setTokenLimits (address _tokenAddress, uint256 _mainAccountLimit, uint256 _backupAccountLimit) public onlyMainAccount {
+  function setTokenLimits(address _tokenAddress, uint256 _mainAccountLimit, uint256 _backupAccountLimit) public onlyMainAccount {
     // This check restricts the mainAccount holder from setting the withdrawal limit for any given ERC-20 token once
     if (s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit > 0 || s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit > 0) {
       revert SavingsAccount__AlreadySetTokenLimit();
