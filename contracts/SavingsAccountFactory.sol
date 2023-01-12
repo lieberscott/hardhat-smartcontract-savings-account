@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "./SavingsAccount.sol";
 
 error SavingsAccountFactory__AccountAlreadyExists();
-error SavingsAccountFactory__BackupAccountAlreadyExists();
+error SavingsAccountFactory__SafekeeperAccountAlreadyExists();
 
 
 contract SavingsAccountFactory {
@@ -19,32 +19,32 @@ contract SavingsAccountFactory {
   }
 
   mapping(address => SavingsAccountData) private mainAccountToContract; // mapping from mainAccount address => contract address
-  mapping(address => SavingsAccountData) private backupAccountToContract; // mapping from backupAccount address => contract address
+  mapping(address => SavingsAccountData) private safekeeperAccountToContract; // mapping from safekeeperAccount address => contract address
 
 
-  event SavingsAccountCreated(address indexed mainAccount, address indexed backupAccount, uint256 mainAccountWithdrawalLimit, uint256 backupAccountWithdrawalLimit, string name);
+  event SavingsAccountCreated(address indexed mainAccount, address indexed safekeeperAccount, uint256 mainAccountWithdrawalLimit, uint256 safekeeperAccountWithdrawalLimit, string name);
 
   constructor () {
     i_owner = msg.sender;
   }
 
-  function createSavingsAccount(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit, string memory _name) payable public {
+  function createSavingsAccount(address _mainAccount, address _safekeeperAccount, uint256 _mainAccountWithdrawalLimit, uint256 _safekeeperAccountWithdrawalLimit, string memory _name) payable public {
     if (mainAccountToContract[_mainAccount].exists) {
       revert SavingsAccountFactory__AccountAlreadyExists();
     }
-    if (backupAccountToContract[_backupAccount].exists) {
-      revert SavingsAccountFactory__BackupAccountAlreadyExists();
+    if (safekeeperAccountToContract[_safekeeperAccount].exists) {
+      revert SavingsAccountFactory__SafekeeperAccountAlreadyExists();
     }
     
     // this is a way to extract the contract address from the returned value
-    address _contractAddress = address((new SavingsAccount){value: msg.value}(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit, _name));
+    address _contractAddress = address((new SavingsAccount){value: msg.value}(_mainAccount, _safekeeperAccount, _mainAccountWithdrawalLimit, _safekeeperAccountWithdrawalLimit, _name));
 
     mainAccountToContract[_mainAccount].contractAddress = _contractAddress;
     mainAccountToContract[_mainAccount].exists = true;
-    backupAccountToContract[_backupAccount].contractAddress = _contractAddress;
-    backupAccountToContract[_backupAccount].exists = true;
+    safekeeperAccountToContract[_safekeeperAccount].contractAddress = _contractAddress;
+    safekeeperAccountToContract[_safekeeperAccount].exists = true;
 
-    emit SavingsAccountCreated(_mainAccount, _backupAccount, _mainAccountWithdrawalLimit, _backupAccountWithdrawalLimit, _name);
+    emit SavingsAccountCreated(_mainAccount, _safekeeperAccount, _mainAccountWithdrawalLimit, _safekeeperAccountWithdrawalLimit, _name);
 
   }
 
@@ -53,9 +53,9 @@ contract SavingsAccountFactory {
     return mainAccountToContract[_mainAccount].contractAddress;
   }
 
-  function getContractFromBackupAddress(address _backupAccount) public view returns(address) {
+  function getContractFromSafekeeperAddress(address _safekeeperAccount) public view returns(address) {
     // this should return the contract address for the given account
-    return backupAccountToContract[_backupAccount].contractAddress;
+    return safekeeperAccountToContract[_safekeeperAccount].contractAddress;
   }
 
 }

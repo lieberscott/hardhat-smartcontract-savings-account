@@ -5,20 +5,20 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 error SavingsAccount__notOwner();
-error SavingsAccount__notBackup();
+error SavingsAccount__notSafekeeper();
 error SavingsAccount__MainWithdrawalLimitTooSmall();
-error SavingsAccount__BackupWithdrawalLimitTooSmall();
+error SavingsAccount__SafekeeperWithdrawalLimitTooSmall();
 error SavingsAccount__MainWithdrawalTooBig();
 error SavingsAccount__MainWithdrawalAlreadyMadeToday();
 error SavingsAccount__CallFail();
-error SavingsAccount__BackupWithdrawalTooBig();
-error SavingsAccount__BackupWithdrawalAlreadyMadeToday();
+error SavingsAccount__SafekeeperWithdrawalTooBig();
+error SavingsAccount__SafekeeperWithdrawalAlreadyMadeToday();
 error SavingsAccount__NotEnoughBalance();
 error SavingsAccount__LargeWithdrawalNotAuthorized();
 error SavingsAccount__AlreadySetTokenLimit();
 
 
-/** @title A contract to add a backup user to protect funds
+/** @title A contract to add a safekeeper user to protect funds
  * @author Scott Lieber
  * @notice This contract is to add a layer of protection to a user's funds
  * @dev No additional data
@@ -29,19 +29,19 @@ contract SavingsAccount {
 
   struct TokenWithdrawalData {
     uint256 mainAccountWithdrawalLimit;
-    uint256 backupAccountWithdrawalLimit;
+    uint256 safekeeperAccountWithdrawalLimit;
     uint256 mainAccountLastWithdrawalDay;
-    uint256 backupAccountLastWithdrawalDay;
+    uint256 safekeeperAccountLastWithdrawalDay;
   }
 
   address private immutable i_mainAccount;
-  address private immutable i_backupAccount;
+  address private immutable i_safekeeperAccount;
   uint256 private immutable i_mainAccountWithdrawalLimit;
-  uint256 private immutable i_backupAccountWithdrawalLimit;
+  uint256 private immutable i_safekeeperAccountWithdrawalLimit;
   mapping(address => TokenWithdrawalData) private s_tokenToWithdrawalData;
   uint256 private s_mainAccountLastWithdrawalDay = 0; // days since Jan. 1, 1970
-  uint256 private s_backupAccountLastWithdrawalDay = 0;
-  uint256 private s_backupAccountBigWithdrawalDay = 0;
+  uint256 private s_safekeeperAccountLastWithdrawalDay = 0;
+  uint256 private s_safekeeperAccountBigWithdrawalDay = 0;
   string private i_name = ""; // human-readable name
 
   modifier onlyMainAccount {
@@ -49,24 +49,24 @@ contract SavingsAccount {
     _; // <- indicates to run the rest of the code; if _; was before the require statement, it would runn the code in the function first, then run the require statement after
   }
 
-  modifier onlyBackupAccount {
-    if (msg.sender != i_backupAccount) { revert SavingsAccount__notBackup(); }
+  modifier onlySafekeeperAccount {
+    if (msg.sender != i_safekeeperAccount) { revert SavingsAccount__notSafekeeper(); }
     _; // <- indicates to run the rest of the code; if _; was before the require statement, it would runn the code in the function first, then run the require statement after
   }
 
-  constructor(address _mainAccount, address _backupAccount, uint256 _mainAccountWithdrawalLimit, uint256 _backupAccountWithdrawalLimit, string memory _name) payable {
+  constructor(address _mainAccount, address _safekeeperAccount, uint256 _mainAccountWithdrawalLimit, uint256 _safekeeperAccountWithdrawalLimit, string memory _name) payable {
     if (_mainAccountWithdrawalLimit <= 0) {
       revert SavingsAccount__MainWithdrawalLimitTooSmall();
     }
 
-    if (_backupAccountWithdrawalLimit <= 0) {
-      revert SavingsAccount__BackupWithdrawalLimitTooSmall();
+    if (_safekeeperAccountWithdrawalLimit <= 0) {
+      revert SavingsAccount__SafekeeperWithdrawalLimitTooSmall();
     }
 
     i_mainAccount = _mainAccount;
-    i_backupAccount = _backupAccount;
+    i_safekeeperAccount = _safekeeperAccount;
     i_mainAccountWithdrawalLimit = _mainAccountWithdrawalLimit;
-    i_backupAccountWithdrawalLimit = _backupAccountWithdrawalLimit;
+    i_safekeeperAccountWithdrawalLimit = _safekeeperAccountWithdrawalLimit;
     i_name = _name;
   }
 
@@ -100,18 +100,18 @@ contract SavingsAccount {
   }
 
   /**
-   * @notice allows the backup user to withdraw up to their daily limit
+   * @notice allows the safekeeper user to withdraw up to their daily limit
    */
-  function backupUserWithdrawal() public onlyBackupAccount {
+  function safekeeperUserWithdrawal() public onlySafekeeperAccount {
 
-    if (block.timestamp / SECONDS_IN_DAY == s_backupAccountLastWithdrawalDay) {
-      revert SavingsAccount__BackupWithdrawalAlreadyMadeToday();
+    if (block.timestamp / SECONDS_IN_DAY == s_safekeeperAccountLastWithdrawalDay) {
+      revert SavingsAccount__SafekeeperWithdrawalAlreadyMadeToday();
     }
 
-    s_backupAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
+    s_safekeeperAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
     
-    // send amount to backupAccount
-    (bool callSuccess,) = payable(i_backupAccount).call{value: address(this).balance < i_backupAccountWithdrawalLimit ? address(this).balance : i_backupAccountWithdrawalLimit}("");
+    // send amount to safekeeperAccount
+    (bool callSuccess,) = payable(i_safekeeperAccount).call{value: address(this).balance < i_safekeeperAccountWithdrawalLimit ? address(this).balance : i_safekeeperAccountWithdrawalLimit}("");
 
     if (!callSuccess) {
       revert SavingsAccount__CallFail();
@@ -119,15 +119,15 @@ contract SavingsAccount {
   }
 
   /**
-   * @notice this function is called when the backupAccount user wants to authorize the mainAccount user to make a withdrawal larger than their daily limit
+   * @notice this function is called when the safekeeperAccount user wants to authorize the mainAccount user to make a withdrawal larger than their daily limit
    */
-  function backupAccountEnableBigWithdrawal() public onlyBackupAccount {
-    s_backupAccountBigWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
+  function safekeeperAccountEnableBigWithdrawal() public onlySafekeeperAccount {
+    s_safekeeperAccountBigWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
   }
 
   /**
-   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
-   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
+   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after safekeeperAccountEnableBigWithdrawal
+   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the safekeeperUser enables a large withdrawal that day
    */
   function mainAccountMakeBigWithdrawal(uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
     if (_withdrawalAmount > address(this).balance) {
@@ -135,7 +135,7 @@ contract SavingsAccount {
     }
 
     // require time to be within the same day as the withdrawal
-    if (block.timestamp / SECONDS_IN_DAY != s_backupAccountBigWithdrawalDay) {
+    if (block.timestamp / SECONDS_IN_DAY != s_safekeeperAccountBigWithdrawalDay) {
       revert SavingsAccount__LargeWithdrawalNotAuthorized();
     }
 
@@ -146,63 +146,57 @@ contract SavingsAccount {
   /**
    * @notice this function is called when the mainAccount user wants to transfer an ERC-20 token back to their main Account
    */
-  function transferErcTokenMain(address _tokenAddress, uint256 _amount) public onlyMainAccount {
-    if (_amount > s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit) {
-      revert SavingsAccount__MainWithdrawalTooBig();
-    }
+  function transferErcTokenMain(address _tokenAddress) public onlyMainAccount {
     if (block.timestamp / SECONDS_IN_DAY == s_tokenToWithdrawalData[_tokenAddress].mainAccountLastWithdrawalDay) {
       revert SavingsAccount__MainWithdrawalAlreadyMadeToday();
     }
     ERC20 erc20Token = ERC20(_tokenAddress);
-    erc20Token.transfer(i_mainAccount, _amount);
+    erc20Token.transfer(i_mainAccount, s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit);
     s_tokenToWithdrawalData[_tokenAddress].mainAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
   }
 
   /**
-   * @notice this function is called when the backupAccount user wants to transfer an ERC-20 token back to their backup Account
+   * @notice this function is called when the safekeeperAccount user wants to transfer an ERC-20 token back to their safekeeper Account
    */
-  function transferErcTokenBackup(address _tokenAddress, uint256 _amount) public onlyBackupAccount {
+  function transferErcTokenSafekeeper(address _tokenAddress) public onlySafekeeperAccount {
+    if (block.timestamp / SECONDS_IN_DAY == s_tokenToWithdrawalData[_tokenAddress].safekeeperAccountLastWithdrawalDay) {
+      revert SavingsAccount__SafekeeperWithdrawalAlreadyMadeToday();
+    }
     ERC20 erc20Token = ERC20(_tokenAddress);
-    if (_amount > s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit) {
-      revert SavingsAccount__BackupWithdrawalTooBig();
-    }
-    if (block.timestamp / SECONDS_IN_DAY == s_tokenToWithdrawalData[_tokenAddress].backupAccountLastWithdrawalDay) {
-      revert SavingsAccount__BackupWithdrawalAlreadyMadeToday();
-    }
-    erc20Token.transfer(i_backupAccount, _amount);
-    s_tokenToWithdrawalData[_tokenAddress].backupAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
+    erc20Token.transfer(i_safekeeperAccount, s_tokenToWithdrawalData[_tokenAddress].safekeeperAccountWithdrawalLimit);
+    s_tokenToWithdrawalData[_tokenAddress].safekeeperAccountLastWithdrawalDay = block.timestamp / SECONDS_IN_DAY;
 
   }
 
   /**
-   * @notice this function is called when the backupAccount user wants to transfer an ERC-20 token back to their backup Account
+   * @notice this function is called when the safekeeperAccount user wants to transfer an ERC-20 token back to their safekeeper Account
    * @dev the mainAccount user can only call this function once
    */
-  function setTokenLimits(address _tokenAddress, uint256 _mainAccountLimit, uint256 _backupAccountLimit) public onlyMainAccount {
+  function setTokenLimits(address _tokenAddress, uint256 _mainAccountLimit, uint256 _safekeeperAccountLimit) public onlyMainAccount {
     // This check restricts the mainAccount holder from setting the withdrawal limit for any given ERC-20 token once
-    if (s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit > 0 || s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit > 0) {
+    if (s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit > 0 || s_tokenToWithdrawalData[_tokenAddress].safekeeperAccountWithdrawalLimit > 0) {
       revert SavingsAccount__AlreadySetTokenLimit();
     }
     // these next two checks prevent the mainUser from setting a withdrawal limit of 0
     if (_mainAccountLimit <= 0) {
       revert SavingsAccount__MainWithdrawalLimitTooSmall();
     }
-    if (_backupAccountLimit <= 0) {
-      revert SavingsAccount__BackupWithdrawalLimitTooSmall();
+    if (_safekeeperAccountLimit <= 0) {
+      revert SavingsAccount__SafekeeperWithdrawalLimitTooSmall();
     }
 
     s_tokenToWithdrawalData[_tokenAddress].mainAccountWithdrawalLimit = _mainAccountLimit;
-    s_tokenToWithdrawalData[_tokenAddress].backupAccountWithdrawalLimit = _backupAccountLimit;
+    s_tokenToWithdrawalData[_tokenAddress].safekeeperAccountWithdrawalLimit = _safekeeperAccountLimit;
   }
 
   /**
-   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after backupAccountEnableBigWithdrawal
-   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the backupUser enables a large withdrawal that day
+   * @notice this function is called when the mainAccount user wants to make a big withdrawal, and can only be called after safekeeperAccountEnableBigWithdrawal
+   * @dev this function can be called an unlimited number of times by the mainUser, for the entire day, once the safekeeperUser enables a large withdrawal that day
    */
   function mainAccountMakeBigTokenWithdrawal(address _tokenAddress, uint256 _withdrawalAmount, address _withdrawalAddress) public onlyMainAccount payable {
 
     // require time to be within the same day as the withdrawal
-    if (block.timestamp / SECONDS_IN_DAY != s_backupAccountBigWithdrawalDay) {
+    if (block.timestamp / SECONDS_IN_DAY != s_safekeeperAccountBigWithdrawalDay) {
       revert SavingsAccount__LargeWithdrawalNotAuthorized();
     }
     ERC20 erc20Token = ERC20(_tokenAddress);
@@ -222,16 +216,16 @@ contract SavingsAccount {
     return i_mainAccount;
   }
 
-  function getBackupAccount() public view returns (address) {
-    return i_backupAccount;
+  function getSafekeeperAccount() public view returns (address) {
+    return i_safekeeperAccount;
   }
 
   function getMainAccountWithdrawalLimit() public view returns (uint256) {
     return i_mainAccountWithdrawalLimit;
   }
 
-  function getBackupAccountWithdrawalLimit() public view returns (uint256) {
-    return i_backupAccountWithdrawalLimit;
+  function getSafekeeperAccountWithdrawalLimit() public view returns (uint256) {
+    return i_safekeeperAccountWithdrawalLimit;
   }
 
   function getTokenWithdrawalData(address _tokenAddress) public view returns (TokenWithdrawalData memory) {
@@ -242,12 +236,12 @@ contract SavingsAccount {
     return s_mainAccountLastWithdrawalDay;
   }
 
-  function getBackupAccountLastWithdrawalDay() public view returns (uint256) {
-    return s_backupAccountLastWithdrawalDay;
+  function getSafekeeperAccountLastWithdrawalDay() public view returns (uint256) {
+    return s_safekeeperAccountLastWithdrawalDay;
   }
 
-  function getBackupAccountBigWithdrawalDay() public view returns (uint256) {
-    return s_backupAccountBigWithdrawalDay;
+  function getSafekeeperAccountBigWithdrawalDay() public view returns (uint256) {
+    return s_safekeeperAccountBigWithdrawalDay;
   }
 
   function getName() public view returns (string memory) {

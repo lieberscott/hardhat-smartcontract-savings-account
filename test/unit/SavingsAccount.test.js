@@ -7,14 +7,14 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 !developmentChains.includes(network.name)
 	? describe.skip
 	: describe("Unit Tests", () => {
-		let deployer, mainAccount, backupAccount;
+		let deployer, mainAccount, safekeeperAccount;
 
 		let savingsAccountFactory, factoryContract;
 
 		let savingsAccountContractAddress;
 
 		const mainUserWithdrawalLimit = ethers.utils.parseEther("1");
-		const backupUserWithdrawalLimit = ethers.utils.parseEther("0.05");
+		const safekeeperUserWithdrawalLimit = ethers.utils.parseEther("0.05");
 		const blankAddress = "0x0000000000000000000000000000000000000000";
 		const SECONDS_IN_DAY = 86400;
 
@@ -22,7 +22,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			const accounts = await ethers.getSigners(); // could also do with getNamedAccounts
 			deployer = accounts[0];
 			mainAccount = accounts[1];
-			backupAccount = accounts[2];
+			safekeeperAccount = accounts[2];
 
 			savingsAccountFactory = await ethers.getContractFactory("SavingsAccountFactory");
 			factoryContract = await savingsAccountFactory.deploy();
@@ -38,34 +38,34 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			});
 	
 			it("Factory adds mainAccount to mapping upon savingsAccount deploy", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
+				await factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account");
 				const contractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				expect(contractAddress).to.not.equal(blankAddress);
 			});
 	
 			it("Factory rejects new savingsAccount if mainUser account already exists", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0", "Al's Account")).to.be.revertedWith(
+				await factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account");
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, "1", "1", "Al's Account")).to.be.revertedWith(
 					"SavingsAccountFactory__AccountAlreadyExists"
 				);
 			});
 
-			it("Factory rejects new savingsAccount if backupUser account already exists", async function() {
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account");
-				await expect(factoryContract.createSavingsAccount(deployer.address, backupAccount.address, "0", "0", "Al's Account")).to.be.revertedWith(
-					"SavingsAccountFactory__BackupAccountAlreadyExists"
+			it("Factory rejects new savingsAccount if safekeeperUser account already exists", async function() {
+				await factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account");
+				await expect(factoryContract.createSavingsAccount(deployer.address, safekeeperAccount.address, "0", "0", "Al's Account")).to.be.revertedWith(
+					"SavingsAccountFactory__SafekeeperAccountAlreadyExists"
 				);
 			});
 	
 			it("savingsAccount deploy fails if mainWithdrawalLimit is 0", async function() {
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, "0", "0", "Scott's Account")).to.be.revertedWith(
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, "0", "0", "Scott's Account")).to.be.revertedWith(
 					"SavingsAccount__MainWithdrawalLimitTooSmall"
 				);
 			});
 	
 			it("SavingsAccount contract can receive ETH upon being deployed", async function() {
 	
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: mainUserWithdrawalLimit });
+				await factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account", { value: mainUserWithdrawalLimit });
 				const address = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				const contractBalance = await ethers.provider.getBalance(address);
 				
@@ -73,15 +73,15 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 			});
 	
 			it("Factory emits event upon savingsAccount deploy", async () => {
-				await expect(factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account")).to.emit(
+				await expect(factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account")).to.emit(
 					factoryContract,
 					"SavingsAccountCreated"
 				)
 				.withArgs(
 					mainAccount.address,
-					backupAccount.address,
+					safekeeperAccount.address,
 					mainUserWithdrawalLimit,
-					backupUserWithdrawalLimit,
+					safekeeperUserWithdrawalLimit,
 					"Scott's Account"
 				)
 			});
@@ -90,11 +90,11 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 		describe("Child tests", () => {
 			
-			let instanceContract, instanceContractAsMainUser, instanceContractAsBackupUser;
+			let instanceContract, instanceContractAsMainUser, instanceContractAsSafekeeperUser;
 
 			beforeEach(async () => {
 				// deploy a child savingsAccount contract
-				await factoryContract.createSavingsAccount(mainAccount.address, backupAccount.address, mainUserWithdrawalLimit, backupUserWithdrawalLimit, "Scott's Account", { value: ethers.utils.parseEther("2.9")});
+				await factoryContract.createSavingsAccount(mainAccount.address, safekeeperAccount.address, mainUserWithdrawalLimit, safekeeperUserWithdrawalLimit, "Scott's Account", { value: ethers.utils.parseEther("2.9")});
 				// get the newly deployed child contract's address
 				savingsAccountContractAddress = await factoryContract.getContractFromMainAddress(mainAccount.address);
 				// create a connection to the generic SavingsAccount.sol contract
@@ -103,8 +103,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				instanceContract = savingsAccount.attach(savingsAccountContractAddress);
 				// Returns a new instance of the savingsAccount contract connected to mainAccount
 				instanceContractAsMainUser = instanceContract.connect(mainAccount);
-				// Returns a new instance of the savingsAccount contract connected to backupAccount
-				instanceContractAsBackupUser = instanceContract.connect(backupAccount);
+				// Returns a new instance of the savingsAccount contract connected to safekeeperAccount
+				instanceContractAsSafekeeperUser = instanceContract.connect(safekeeperAccount);
 			});
 
 			describe("Constructor tests", () => {
@@ -112,14 +112,14 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				it("Child adds constructor data to contract", async function() {
 			
 					const returnedMainAccount = await instanceContract.getMainAccount();
-					const returnedBackupAccount = await instanceContract.getBackupAccount();
+					const returnedSafekeeperAccount = await instanceContract.getSafekeeperAccount();
 					const returnedMainWithdrawalLimit = await instanceContract.getMainAccountWithdrawalLimit();
-					const returnedBackupWithdrawalLimit = await instanceContract.getBackupAccountWithdrawalLimit();
+					const returnedSafekeeperWithdrawalLimit = await instanceContract.getSafekeeperAccountWithdrawalLimit();
 					
 					assert.equal(returnedMainAccount, mainAccount.address);
-					assert.equal(returnedBackupAccount, backupAccount.address);
+					assert.equal(returnedSafekeeperAccount, safekeeperAccount.address);
 					assert.equal(returnedMainWithdrawalLimit.toString(), mainUserWithdrawalLimit);
-					assert.equal(returnedBackupWithdrawalLimit.toString(), backupUserWithdrawalLimit);
+					assert.equal(returnedSafekeeperWithdrawalLimit.toString(), safekeeperUserWithdrawalLimit);
 				});
 
 				it("s_mainAccountLastWithdrawalDay is 0 upon deploy", async function() {
@@ -129,11 +129,11 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(s_mainAccountLastWithdrawalDay, 0);
 				});
 
-				it("s_backupAccountLastWithdrawalDay is 0 upon deploy", async function() {
+				it("s_safekeeperAccountLastWithdrawalDay is 0 upon deploy", async function() {
 			
-					const s_backupAccountLastWithdrawalDay = await instanceContract.getBackupAccountLastWithdrawalDay();
+					const s_safekeeperAccountLastWithdrawalDay = await instanceContract.getSafekeeperAccountLastWithdrawalDay();
 					
-					assert.equal(s_backupAccountLastWithdrawalDay, 0);
+					assert.equal(s_safekeeperAccountLastWithdrawalDay, 0);
 				});
 
 			});
@@ -186,10 +186,10 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(endingBalance.add(gasCost).toString(), startingBalance.add(mainUserWithdrawalLimit).toString());
 				});
 	
-				it("backupUser can NOT use mainUserWithdrawal", async function() {
+				it("safekeeperUser can NOT use mainUserWithdrawal", async function() {
 	
-					// Attempt withdrawal as backupUser
-					await expect(instanceContractAsBackupUser.mainUserWithdrawal()).to.be.revertedWith(
+					// Attempt withdrawal as safekeeperUser
+					await expect(instanceContractAsSafekeeperUser.mainUserWithdrawal()).to.be.revertedWith(
 						"SavingsAccount__notOwner"
 					);
 				});
@@ -301,61 +301,61 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 				});
 			});
 
-			describe("backupUserWithdrawal tests", () => {
-				it("s_backupAccountLastWithdrawalDay updates once backupUser withdraws funds", async function() {
+			describe("safekeeperUserWithdrawal tests", () => {
+				it("s_safekeeperAccountLastWithdrawalDay updates once safekeeperUser withdraws funds", async function() {
 	
-					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
+					// Make withdrawal as safekeeperUser
+					const transactionResponse = await instanceContractAsSafekeeperUser.safekeeperUserWithdrawal();
 	
-					const s_backupAccountLastWithdrawalDay = await instanceContract.getBackupAccountLastWithdrawalDay();
+					const s_safekeeperAccountLastWithdrawalDay = await instanceContract.getSafekeeperAccountLastWithdrawalDay();
 	
-					expect(s_backupAccountLastWithdrawalDay).is.not.equal(0);
+					expect(s_safekeeperAccountLastWithdrawalDay).is.not.equal(0);
 					
 				});
 	
-				it("backupUser can use backupUserWithdrawal", async function() {
+				it("safekeeperUser can use safekeeperUserWithdrawal", async function() {
 	
-					// Get the backupUser's starting account balance
-					const startingBalance = await ethers.provider.getBalance(backupAccount.address);
+					// Get the safekeeperUser's starting account balance
+					const startingBalance = await ethers.provider.getBalance(safekeeperAccount.address);
 	
-					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
+					// Make withdrawal as safekeeperUser
+					const transactionResponse = await instanceContractAsSafekeeperUser.safekeeperUserWithdrawal();
 					const transactionReceipt = await transactionResponse.wait(1);
 					const { gasUsed, effectiveGasPrice } = transactionReceipt; // 11:30:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
 					const gasCost = gasUsed.mul(effectiveGasPrice);
 	
-					// Get the backupUser's ending account balance
-					const endingBalance = await ethers.provider.getBalance(backupAccount.address);
+					// Get the safekeeperUser's ending account balance
+					const endingBalance = await ethers.provider.getBalance(safekeeperAccount.address);
 	
-					assert.equal(endingBalance.add(gasCost).toString(), startingBalance.add(backupUserWithdrawalLimit).toString());
+					assert.equal(endingBalance.add(gasCost).toString(), startingBalance.add(safekeeperUserWithdrawalLimit).toString());
 				});
 	
-				it("mainUser can NOT use backupUserWithdrawal", async function() {
+				it("mainUser can NOT use safekeeperUserWithdrawal", async function() {
 	
-					// Attempt withdrawal as backupUser
-					await expect(instanceContractAsMainUser.backupUserWithdrawal()).to.be.revertedWith(
-						"SavingsAccount__notBackup"
+					// Attempt withdrawal as safekeeperUser
+					await expect(instanceContractAsMainUser.safekeeperUserWithdrawal()).to.be.revertedWith(
+						"SavingsAccount__notSafekeeper"
 					);
 				});
 	
-				it("backupUser can not withdraw more than once per day", async () => {
+				it("safekeeperUser can not withdraw more than once per day", async () => {
 	
-					// Make withdrawal as backupUser
-					const transactionResponse = await instanceContractAsBackupUser.backupUserWithdrawal();
+					// Make withdrawal as safekeeperUser
+					const transactionResponse = await instanceContractAsSafekeeperUser.safekeeperUserWithdrawal();
 	
 					// Attempt to make second withdrawal
-					await expect(instanceContractAsBackupUser.backupUserWithdrawal()).to.be.revertedWith(
-						"SavingsAccount__BackupWithdrawalAlreadyMadeToday"
+					await expect(instanceContractAsSafekeeperUser.safekeeperUserWithdrawal()).to.be.revertedWith(
+						"SavingsAccount__SafekeeperWithdrawalAlreadyMadeToday"
 					);
 				});
 	
-				it("backupUser can withdraw today, and the next day", async () => {
+				it("safekeeperUser can withdraw today, and the next day", async () => {
 	
-					// Get the backupUser's starting account balance
-					const startingBalance = await ethers.provider.getBalance(backupAccount.address);
+					// Get the safekeeperUser's starting account balance
+					const startingBalance = await ethers.provider.getBalance(safekeeperAccount.address);
 	
-					// Make withdrawal as backupUser and get gasCost1 from the transaction
-					const transactionResponse1 = await instanceContractAsBackupUser.backupUserWithdrawal();
+					// Make withdrawal as safekeeperUser and get gasCost1 from the transaction
+					const transactionResponse1 = await instanceContractAsSafekeeperUser.safekeeperUserWithdrawal();
 					const transactionReceipt1 = await transactionResponse1.wait(1);
 					const gasUsed1 = transactionReceipt1.gasUsed;
 					const effectiveGasPrice1 = transactionReceipt1.effectiveGasPrice;
@@ -368,7 +368,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await network.provider.request({ method: "evm_mine", params: [] });
 	
 					// Make withdrawal "next day" and get gasCost2 from the transaction
-					const transactionResponse2 = await instanceContractAsBackupUser.backupUserWithdrawal();
+					const transactionResponse2 = await instanceContractAsSafekeeperUser.safekeeperUserWithdrawal();
 					const transactionReceipt2 = await transactionResponse2.wait(1);
 					const gasUsed2 = transactionReceipt2.gasUsed;
 					const effectiveGasPrice2 = transactionReceipt2.effectiveGasPrice;
@@ -378,10 +378,10 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					// get total gas cost to add back to the endingBalance (since it will have been lost)
 					const gasCostTotal = gasCost1.add(gasCost2);
 	
-					// Get the backupUser's ending account balance
-					const endingBalance = await ethers.provider.getBalance(backupAccount.address);
+					// Get the safekeeperUser's ending account balance
+					const endingBalance = await ethers.provider.getBalance(safekeeperAccount.address);
 	
-					assert.equal(endingBalance.add(gasCostTotal).toString(), startingBalance.add(backupUserWithdrawalLimit).add(backupUserWithdrawalLimit).toString());
+					assert.equal(endingBalance.add(gasCostTotal).toString(), startingBalance.add(safekeeperUserWithdrawalLimit).add(safekeeperUserWithdrawalLimit).toString());
 	
 				});
 			});
@@ -398,25 +398,25 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					);
 				});
 
-				it("backupUser can authorize big withdrawal", async function() {
+				it("safekeeperUser can authorize big withdrawal", async function() {
 
-					const transaction = await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+					const transaction = await instanceContractAsSafekeeperUser.safekeeperAccountEnableBigWithdrawal();
 
-					const s_backupAccountBigWithdrawalDay = await instanceContract.getBackupAccountBigWithdrawalDay();
+					const s_safekeeperAccountBigWithdrawalDay = await instanceContract.getSafekeeperAccountBigWithdrawalDay();
 	
-					expect(s_backupAccountBigWithdrawalDay).is.not.equal(0);
+					expect(s_safekeeperAccountBigWithdrawalDay).is.not.equal(0);
 
 				});
 
 				it("no other account can authorize big withdrawal", async function() {
 
-					await expect(instanceContractAsMainUser.backupAccountEnableBigWithdrawal()).to.be.revertedWith(
-						"SavingsAccount__notBackup"
+					await expect(instanceContractAsMainUser.safekeeperAccountEnableBigWithdrawal()).to.be.revertedWith(
+						"SavingsAccount__notSafekeeper"
 					);
 
 				});
 
-				it("mainUser can make a big withdrawal after backupUser authorizes big withdrawal", async function() {
+				it("mainUser can make a big withdrawal after safekeeperUser authorizes big withdrawal", async function() {
 
 					// Get the mainUser's starting account balance
 					const startingBalance = await ethers.provider.getBalance(mainAccount.address);
@@ -425,7 +425,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					const accountBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
 
 					// Enable big withdrawal
-					const transaction = await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+					const transaction = await instanceContractAsSafekeeperUser.safekeeperAccountEnableBigWithdrawal();
 	
 					// Make withdrawal as mainUser and get gasCost from the transaction
 					const transactionResponse = await instanceContractAsMainUser.mainAccountMakeBigWithdrawal(accountBalance, mainAccount.address);
@@ -441,13 +441,13 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(endingBalance.add(gasCost).toString(), startingBalance.add(accountBalance).toString());
 				});
 
-				it("mainUser can not make a big withdrawal THE DAY AFTER backupUser enables a big withdrawal", async () => {
+				it("mainUser can not make a big withdrawal THE DAY AFTER safekeeperUser enables a big withdrawal", async () => {
 	
 					// Get the account's balance
 					const accountBalance = await ethers.provider.getBalance(savingsAccountContractAddress);
 
 					// Enable big withdrawal
-					const transaction = await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+					const transaction = await instanceContractAsSafekeeperUser.safekeeperAccountEnableBigWithdrawal();
 	
 					// Simulate time moving forward on blockchain
 					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
@@ -488,36 +488,30 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(savingsAccountBalance, startingBalance + transferAmount);
 				});
 
-				it("mainUser can NOT send ERC20 tokens from savingsAccount before setting limits", async () => {
-					await expect(instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
-						"SavingsAccount__MainWithdrawalTooBig"
-					);
-				});
-
 				it("only mainUser can call transferErcTokenMain function", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
-					await expect(instanceContractAsBackupUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
+					await expect(instanceContractAsSafekeeperUser.transferErcTokenMain(tokenContractAddress)).to.be.revertedWith(
 						"SavingsAccount__notOwner"
 					);
 				});
 
-				it("only backupUser can call transferErcTokenBackup function", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+				it("only safekeeperUser can call transferErcTokenSafekeeper function", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
-					await expect(instanceContractAsMainUser.transferErcTokenBackup(tokenContractAddress, transferAmount)).to.be.revertedWith(
-						"SavingsAccount__notBackup"
+					await expect(instanceContractAsMainUser.transferErcTokenSafekeeper(tokenContractAddress)).to.be.revertedWith(
+						"SavingsAccount__notSafekeeper"
 					);
 				});
 
 				it("mainUser can send ERC20 tokens from savingsAccount back to herself after setting withdrawal limits", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
 					// Make the transfer
-					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress);
 					const mainAccountBalance = await myTokenContract.balanceOf(mainAccount.address);
 					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
 
@@ -525,49 +519,49 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(savingsAccountBalance, startingBalance - transferAmount);
 				});
 
-				it("backupUser can send ERC20 tokens from savingsAccount to herself after mainUser sets withdrawal limits", async () => {
-					// Main user sets the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+				it("safekeeperUser can send ERC20 tokens from savingsAccount to herself after mainUser sets withdrawal limits", async () => {
+					// Main user sets the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
-					// Backup user makes the transfer
-					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
-					const backupAccountBalance = await myTokenContract.balanceOf(backupAccount.address);
+					// Safekeeper user makes the transfer
+					await instanceContractAsSafekeeperUser.transferErcTokenSafekeeper(tokenContractAddress);
+					const safekeeperAccountBalance = await myTokenContract.balanceOf(safekeeperAccount.address);
 					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
 
-					assert.equal(backupAccountBalance, transferAmount);
+					assert.equal(safekeeperAccountBalance, transferAmount);
 					assert.equal(savingsAccountBalance, startingBalance - transferAmount);
 				});
 
 				it("ERC20 tokens can not be transferred more than once per day by mainAccount", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
 					// Make the transfer
-					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress);
 
-					await expect(instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount)).to.be.revertedWith(
+					await expect(instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress)).to.be.revertedWith(
 						"SavingsAccount__MainWithdrawalAlreadyMadeToday"
 					);
 				});
 
-				it("ERC20 tokens can not be transferred more than once per day by backupAccount", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+				it("ERC20 tokens can not be transferred more than once per day by safekeeperAccount", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
 					// Make the transfer
-					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+					await instanceContractAsSafekeeperUser.transferErcTokenSafekeeper(tokenContractAddress);
 
-					await expect(instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount)).to.be.revertedWith(
-						"SavingsAccount__BackupWithdrawalAlreadyMadeToday"
+					await expect(instanceContractAsSafekeeperUser.transferErcTokenSafekeeper(tokenContractAddress)).to.be.revertedWith(
+						"SavingsAccount__SafekeeperWithdrawalAlreadyMadeToday"
 					);
 				});
 
 				it("ERC20 tokens can be transferred by mainUser after a day has passed", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
 					// Make the transfer
-					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress);
 
 					// Simulate time moving forward on blockchain
 					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
@@ -575,7 +569,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await network.provider.request({ method: "evm_mine", params: [] });
 
 					// Make the next-day transfer
-					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress, transferAmount);
+					await instanceContractAsMainUser.transferErcTokenMain(tokenContractAddress);
 
 					const mainAccountBalance = await myTokenContract.balanceOf(mainAccount.address);
 					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
@@ -584,12 +578,12 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					assert.equal(savingsAccountBalance, startingBalance - transferAmount - transferAmount);
 				});
 
-				it("ERC20 tokens can be transferred by backupUser after a day has passed", async () => {
-					// Set the withdrawal limits for the contract, mainUserLimit, backupUserLimit
+				it("ERC20 tokens can be transferred by safekeeperUser after a day has passed", async () => {
+					// Set the withdrawal limits for the contract, mainUserLimit, safekeeperUserLimit
 					await instanceContractAsMainUser.setTokenLimits(tokenContractAddress, transferAmount, transferAmount);
 
 					// Make the transfer
-					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+					await instanceContractAsSafekeeperUser.transferErcTokenSafekeeper(tokenContractAddress);
 
 					// Simulate time moving forward on blockchain
 					// At 15:35:00 in Patrick Collins' 32-hour FreeCodeCamp Solidity course on YouTube
@@ -597,18 +591,18 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 					await network.provider.request({ method: "evm_mine", params: [] });
 
 					// Make the next-day transfer
-					await instanceContractAsBackupUser.transferErcTokenBackup(tokenContractAddress, transferAmount);
+					await instanceContractAsSafekeeperUser.transferErcTokenSafekeeper(tokenContractAddress);
 
-					const backupAccountBalance = await myTokenContract.balanceOf(backupAccount.address);
+					const safekeeperAccountBalance = await myTokenContract.balanceOf(safekeeperAccount.address);
 					const savingsAccountBalance = await myTokenContract.balanceOf(savingsAccountContractAddress);
 
-					assert.equal(backupAccountBalance, transferAmount + transferAmount);
+					assert.equal(safekeeperAccountBalance, transferAmount + transferAmount);
 					assert.equal(savingsAccountBalance, startingBalance - transferAmount - transferAmount);
 				});
 
-				it("Large ERC20 tokens can be transferred after enabled by backupUser", async () => {
+				it("Large ERC20 tokens can be transferred after enabled by safekeeperUser", async () => {
 					// Enable big withdrawals
-					await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+					await instanceContractAsSafekeeperUser.safekeeperAccountEnableBigWithdrawal();
 
 					// Make the transfer
 					await instanceContractAsMainUser.mainAccountMakeBigTokenWithdrawal(tokenContractAddress, transferAmount + 1, mainAccount.address);
@@ -622,7 +616,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
 				it("Large ERC20 tokens can be transferred to another account", async () => {
 					// Enable big withdrawals
-					await instanceContractAsBackupUser.backupAccountEnableBigWithdrawal();
+					await instanceContractAsSafekeeperUser.safekeeperAccountEnableBigWithdrawal();
 
 					// Make the transfer
 					await instanceContractAsMainUser.mainAccountMakeBigTokenWithdrawal(tokenContractAddress, transferAmount + 1, deployer.address);
