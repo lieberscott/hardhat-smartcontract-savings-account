@@ -6,6 +6,7 @@ import "./SavingsAccount.sol";
 
 error SavingsAccountFactory__AccountAlreadyExists();
 error SavingsAccountFactory__SafekeeperAccountAlreadyExists();
+error SavingsAccountFactory__OnlyOwner();
 
 
 contract SavingsAccountFactory {
@@ -56,6 +57,13 @@ contract SavingsAccountFactory {
   function getContractFromSafekeeperAddress(address _safekeeperAccount) public view returns(address) {
     // this should return the contract address for the given account
     return safekeeperAccountToContract[_safekeeperAccount].contractAddress;
+  }
+
+  function kill() external {
+    if (msg.sender != i_owner) {
+      revert SavingsAccountFactory__OnlyOwner();
+    }
+    selfdestruct(payable(msg.sender));
   }
 
 }
